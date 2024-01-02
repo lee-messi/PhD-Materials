@@ -1,0 +1,10 @@
+## Comments
++ Great justification and explanation in the case selection. Also liked how you set up the whole project. Really interesting and look forward to hearing more about this if I get the chance. Especially, the justifications for selecting the three communities stood out to me as easy to follow and well-elaborated upon. 
+
++ I wanted to read more about the translation part. How are these translations being performed? What models or packages are you using? Other parts of the analyses were detailed and well-elaborated, but this part seemed less elaborated upon. 
+
++ Also, the research question of the project is: "Does conflict-related rape **demobilize** civlians or have a uniquely mobilizing effect?" And yet it was not very clear to me how you were planning to measure the "mobilizing" aspect of the question. I see that you are planning to use the *estimateEffect()* function in the **stm** package on "(4) wartime support behavior" item, but what is not clear to me is: are you looking to see if there is a significant difference in the proportion of a specific topic in each of the areas? If so, which topic are you looking for? If there is a specific topic you are looking for, perhaps you might want to use keyword-assisted STMs. 
+
++ On a related note, it also makes sense to me that you might be interested in some sentiment analysis here. Perhaps, by using a dictionary-based approach or pre-trained sentiment classifier models on Hugging Face, you would be able to assign sentiment scores to "(4) wartime support behavior" responses, which would give you an idea of whether individuals' stance (positive or negative) on wartime support. 
+
++ If you are using pre-trained sentiment classifier models, it may be the case that there is already a decent pre-trained model out there trained on that particular language. Or you could use multi-lingual models which would relieve you of the whole translating step. 

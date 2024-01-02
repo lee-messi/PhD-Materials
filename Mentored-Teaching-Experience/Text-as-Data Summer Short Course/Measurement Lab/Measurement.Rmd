@@ -1,0 +1,392 @@
+---
+title: "Measurement and Classification"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+# Dictionaries!
+library(quanteda)
+library(quanteda.textstats)
+library(quanteda.textplots)
+library(ggplot2)
+library(tidyr)
+```
+
+```{r}
+# Let's work with the inaugural speeches in quanteda
+speeches <- quanteda::data_corpus_inaugural
+summary(speeches)
+```
+
+```{r}
+# Tokenize corpus and make a DFM
+toks <- tokens(speeches, remove_punct = TRUE)
+dfm <- dfm(toks)
+
+# Do this removing stop words using tidyverse pipe
+dfm_nostop <- toks %>% 
+  tokens_select(stopwords("english"), selection="remove") %>% 
+  dfm()
+```
+
+```{r}
+topfeatures(dfm, 10, scheme = 'count')
+# can look at another scheme - docfreq
+```
+
+
+```{r}
+topfeatures(dfm_nostop, 10, scheme = 'count')
+```
+
+
+```{r}
+# group by covariates
+topfeatures(dfm_nostop, n = 5, groups = Party)
+```
+
+```{r}
+# Visualize the same data using a different function
+textstat_frequency(dfm_nostop, n = 15, groups = Party)
+```
+
+```{r}
+dfm_nostop %>% 
+  textstat_frequency(n = 15) %>% 
+  ggplot(aes(x = reorder(feature, frequency), y = frequency)) +
+  geom_point() +
+  coord_flip() +
+  labs(x = NULL, y = "Frequency") +
+  theme_minimal()
+```
+
+```{r}
+# create a grouped dfm and compare groups
+dfm_party <- dfm_group(dfm_nostop, groups = Party)
+dfm_party <- dfm_party[docvars(dfm_party)$Party %in% c("Democratic","Republican"),]
+
+# create wordcloud
+textplot_wordcloud(dfm_party, 
+                   comparison = TRUE, 
+                   max_words = 200)
+```
+
+```{r}
+# Capitalized Collocations
+# padding to true as empty string is needed to identify collocations
+tstat_col_caps <- tokens_select(toks, 
+                                pattern = "^[A-Z]", 
+                                valuetype = "regex", 
+                                case_insensitive = FALSE, 
+                                padding = TRUE) %>% 
+  textstat_collocations(min_count = 20)
+
+head(tstat_col_caps, 20)
+```
+
+```{r}
+toks %>% tokens_select(stopwords("english"), 
+                       selection = "remove",
+                       padding=TRUE) %>% 
+  textstat_collocations(min_count = 25)
+```
+
+```{r}
+#### Look at Keyword in Context ####
+kwic(toks, "America", window = 5)
+```
+
+```{r}
+kwic(toks, pattern = phrase("United States of America"), window = 3)
+```
+
+```{r}
+#Let's say we wanted to grab all words about the government
+gov <- c("america", "America", "american", "American",
+         "USA", "United States of America")
+
+# Grab them and words around them
+toks_gov <- tokens_keep(toks, 
+                        pattern = phrase(gov), 
+                        window = 10)
+toks_gov
+```
+
+# Dictionaries (Classification)
+
+```{r}
+# Lexicoder Sentiment Dictionary
+data_dictionary_LSD2015
+```
+
+```{r}
+#Score the tokens
+toks_gov_lsd <- tokens_lookup(toks, 
+                              dictionary = data_dictionary_LSD2015)
+toks_gov_lsd
+```
+
+
+```{r}
+#group them up by year
+dfmat_gov_lsd <- dfm(toks_gov_lsd) %>% dfm_group(groups = Year)
+dfmat_gov_lsd
+```
+
+```{r}
+toplot <- convert(dfmat_gov_lsd, to = "data.frame")
+toplot <- pivot_longer(toplot, !doc_id)
+toplot
+```
+
+
+```{r}
+# long format data --> ggplot 
+ggplot(toplot, aes(x = as.numeric(doc_id), y = value,
+                   color = name))+
+  geom_line()+
+  theme_minimal()
+```
+
+
+
+** Question: Any outstanding observations? **
+
+# We can use our own dictionaries as well!
+
+```{r}
+dict <- dictionary(list(taxation = "tax*",
+                        immigration = c("immigrant", "immigration")))
+dict
+```
+
+```{r}
+our_dict <- tokens_lookup(toks, dictionary = dict)
+dfm(our_dict)
+```
+
+# Second Part
+
+```{r}
+#Data, some code, and motivation from variance explained, see this blogpost http://varianceexplained.org/r/trump-tweets/
+#load(url("http://varianceexplained.org/files/trump_tweets_df.rda"))
+
+#Packages you'll need for this example
+library(dplyr)
+library(purrr)
+library(lubridate)
+library(quanteda)
+library(quanteda.textmodels)
+library(glmnet)
+```
+
+```{r}
+# Trump Data
+load("trump_tweets_df.rda")
+```
+
+```{r}
+# Get source from the data, 
+trump_tweets_df$source <- ifelse(trump_tweets_df$statusSource=='<a href="http://twitter.com" rel="nofollow">Twitter Web Client</a>', "web",
+                                 ifelse(trump_tweets_df$statusSource=='<a href="http://instagram.com" rel="nofollow">Instagram</a>', "instagram", ifelse(trump_tweets_df$statusSource=='<a href="http://twitter.com/#!/download/ipad" rel="nofollow">Twitter for iPad</a>', "ipad", 
+                                                                                                                                                         ifelse(trump_tweets_df$statusSource=='<a href="http://twitter.com/download/android" rel="nofollow">Twitter for Android</a>', "android",
+                                                                                                                                                                ifelse(trump_tweets_df$statusSource=='<a href="https://studio.twitter.com" rel="nofollow">Media Studio</a>', "media", "iphone")))))
+
+table(trump_tweets_df$source)
+```
+
+```{r}
+trump_tweets_df %>% select(c(statusSource, source)) %>% head(2)
+```
+
+
+```{r}
+# Let's plot this by hour
+trump_tweets_df$hour <- hour(with_tz(trump_tweets_df$created, "EST"))
+par(mfrow=c(1,2))
+
+# Trump Tweets
+hist(trump_tweets_df$hour[trump_tweets_df$source=="android"], 
+     main="Trump Tweets", xlab="hour")
+# Staff Tweets
+hist(trump_tweets_df$hour[trump_tweets_df$source=="iphone"], 
+     main="Staff Tweets", xlab="hour")
+```
+
+** Question: Any outstanding observations? **
+
+```{r}
+# Focus on android and iphone for now to make the problem simpler
+dat <- trump_tweets_df %>% filter(source %in% c("iphone", "android"))
+# dat <- data.frame(trump_tweets_df[trump_tweets_df$source %in% c("iphone", "android"),])
+
+#Create a document feature matrix of the tweets to do the prediction
+mycorpus <- corpus(dat, text_field = "text")
+toks <- tokens(mycorpus, remove_numbers = TRUE)
+toks <- tokens_wordstem(toks)
+toks <- tokens_select(toks,  stopwords("en"), selection = "remove")
+dfm <- dfm(toks)
+dfm <- dfm_trim(dfm, min_docfreq = 0.001, docfreq_type = "prop")
+dfm
+```
+
+
+```{r}
+#Split into training and validation
+set.seed(34579)
+rows <- 1:nrow(dfm)
+training <- sample(rows, round(nrow(dfm)*.75))
+validation <- rows[!rows%in%training]
+
+#Create separate dfm's for each
+dfmat_train <- dfm_subset(dfm, 1:nrow(dfm) %in% training)
+dfmat_val <- dfm_subset(dfm, 1:nrow(dfm) %in% validation)
+```
+
+
+```{r}
+# Train a Naive Bayes Classifier
+tmod_nb <- textmodel_nb(dfmat_train, docvars(dfmat_train, "source"))
+summary(tmod_nb)
+# Estimated Feature scores: probabilies that a feature is associated with each 
+# label, in this case android or iphone.  
+```
+
+```{r}
+# Probability of a word given a category
+coef_nb <- coef(tmod_nb)
+
+# Words associated with iphone (staff):
+sort(coef_nb[,2]/coef_nb[,1], decreasing=T)[1:20]
+```
+
+```{r}
+#Words associated with android
+sort(coef_nb[,1]/coef_nb[,2], decreasing=T)[1:20]
+```
+
+
+```{r}
+# Evaluate performance of the classifier on training data set
+predict.train <- predict(tmod_nb, dfmat_train)
+```
+
+
+```{r}
+tab_train <- table(docvars(dfmat_train, "source"), predict.train)
+tab_train
+```
+
+```{r}
+#precision
+diag(tab_train)/colSums(tab_train)
+#recall
+diag(tab_train)/rowSums(tab_train)
+```
+
+```{r}
+# How well does this prediction do out of sample?  Validation
+predict.val <- predict(tmod_nb, newdata = dfmat_val)
+tab_val <- table(docvars(dfmat_val, "source"), predict.val)
+tab_val
+```
+
+```{r}
+#precision
+diag(tab_val)/colSums(tab_val)
+#recall
+diag(tab_val)/rowSums(tab_val)
+```
+
+```{r}
+#Predicted Trump Tweets (Android)
+predict.all <- predict(tmod_nb, newdata = dfm)
+head(texts(mycorpus)[predict.all=="android"])
+```
+
+```{r}
+# Predicted Staff Tweets (iPhone)
+predict.all <- predict(tmod_nb, newdata = dfm)
+head(texts(mycorpus)[predict.all=="iphone"])
+```
+
+# LASSO regression for text classification
+
+```{r}
+lasso.1 <- glmnet(dfmat_train, 
+                  docvars(dfmat_train, "source"),
+                  family = "binomial", 
+                  alpha = 1) # lasso penalty; penalize coefficients L1-norm
+```
+
+```{r}
+# lambda is constant that determines coefficient shrinkage
+lasso.1$lambda
+```
+
+```{r}
+#These lambdas produce different betas:
+summary(lasso.1$beta[,1])
+summary(lasso.1$beta[,20])
+```
+
+```{r}
+# features with highest beta coefficients: those that are more likely to be
+# classified as being written by an iphone (label = 1)
+sort(lasso.1$beta[,40], decreasing=T)[1:20]
+```
+
+```{r}
+# features with smallest beta coefficients: those that are more likely to be
+# classified as being written by an android (label = 0)
+sort(lasso.1$beta[,40], decreasing = F)[1:20]
+```
+
+```{r}
+#Let's look at it's performance out of sample
+predict.test <- predict(lasso.1, 
+                        dfmat_val, 
+                        type="class")
+```
+
+```{r}
+table(predict.test[,40], docvars(dfmat_val, "source"))
+```
+
+```{r}
+lasso.val <- table(predict.test[,40], docvars(dfmat_val, "source"))
+#precision
+diag(lasso.val)/colSums(lasso.val)
+#recall
+diag(lasso.val)/rowSums(lasso.val)
+```
+
+```{r}
+table(predict.test[,1], docvars(dfmat_val, "source"))
+```
+
+# Identify which lambda value is best (Cross Validation)
+
+```{r}
+#Cross validation with Lasso
+cv <- cv.glmnet(dfmat_train, docvars(dfmat_train, "source"),
+                family="binomial", alpha = 1, 
+                type="class")
+```
+
+```{r}
+par(mfrow=c(1,1))
+plot(log(cv$lambda), cv$cvm, 
+     xlab="Log Lambda", ylab="Mean Cross-Validated Error")
+lines(log(cv$lambda), cv$cvup, lty=2)
+lines(log(cv$lambda), cv$cvlo, lty=2)
+# Note: Brandon will cover cross validation further next week!
+```
+
+```{r}
+# In case you want to identify best lambda
+cv$lambda.min
+```
+
